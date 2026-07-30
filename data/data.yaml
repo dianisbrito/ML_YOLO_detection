@@ -1,0 +1,7 @@
+path: /home/claude/lichen-droplet-detection-yolo/data
+train: train/images
+val: val/images
+test: test/images
+
+names:
+  0: gota
