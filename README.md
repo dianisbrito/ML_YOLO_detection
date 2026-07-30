@@ -3,6 +3,7 @@
 **Author:** Diana Brito Hoyos — Biologist & Biostatistician | Data Analyst
 
 📓 **[Full pipeline notebook](./notebooks/droplet_detection_pipeline.ipynb)** — data generation, training, evaluation, and geometry extraction, with real (executed) outputs
+🔗 **[Live interactive demo](https://mlyolodetection.streamlit.app/)**
 
 An end-to-end computer-vision pipeline: training a YOLOv8 object detector to identify liquid droplets, evaluating it with standard object-detection metrics, and extracting a geometric hydrophobicity-proxy metric from each detection — plus an interactive Streamlit demo.
 
@@ -53,7 +54,3 @@ streamlit run app.py
 ## Tech stack
 
 `Python` · `ultralytics` (YOLOv8) · `PyTorch` · `Streamlit` · `PIL` / `NumPy` · `pandas` · Jupyter
-
-## About the author
-
-Biologist with 12+ years of experience integrating remote sensing, advanced statistics, and scientific programming across public health, ecology, agriculture, and environmental research — including computer-vision pipelines (YOLO) for animal behavior and morphological/physical characterization. See full profile on [GitHub](https://github.com/dianisbrito) · [LinkedIn](TU-LINK-AQUI).
