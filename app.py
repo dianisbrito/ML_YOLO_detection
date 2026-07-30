@@ -1,42 +1,47 @@
 """
-Gradio demo app — droplet detection & hydrophobicity-proxy metrics.
+Streamlit demo app — droplet detection & hydrophobicity-proxy metrics.
 
 Loads the trained YOLOv8 model and lets the user run inference on a test
 image (or upload their own), visualizing detections and computing the
-geometric contact-angle-proxy metric per droplet — reproducing the
-interactive-demo component of the original project.
+geometric contact-angle-proxy metric per droplet.
 
-Run with: python app.py
+Note: the original project's interactive demo was built in Gradio (see
+notebooks/droplet_detection_pipeline.ipynb for that version's code) —
+this Streamlit version exists purely for free, reliable public hosting
+via Streamlit Community Cloud, since Hugging Face Spaces now requires a
+paid plan for Gradio apps on CPU Basic hardware.
+
+Run with: streamlit run app.py
 """
 
+import sys
 from pathlib import Path
 
-import gradio as gr
 import numpy as np
 import pandas as pd
+import streamlit as st
 from PIL import Image
 from ultralytics import YOLO
 
-from src.geometry import compute_droplet_geometry
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+from geometry import compute_droplet_geometry
 
-MODEL_PATH = Path(__file__).parent / "runs" / "detect" / "train" / "weights" / "best.pt"
+st.set_page_config(page_title="Droplet Detection — YOLOv8 Demo", layout="wide")
+
+MODEL_PATH = Path(__file__).parent / "models" / "best.pt"
 TEST_IMAGES_DIR = Path(__file__).parent / "data" / "test" / "images"
 
-_model_cache = {}
+
+@st.cache_resource
+def load_model():
+    if not MODEL_PATH.exists():
+        st.error(f"Trained model not found at {MODEL_PATH}.")
+        st.stop()
+    return YOLO(str(MODEL_PATH))
 
 
-def get_model():
-    if "model" not in _model_cache:
-        if not MODEL_PATH.exists():
-            raise FileNotFoundError(
-                f"Trained model not found at {MODEL_PATH}. Run `python src/train.py` first."
-            )
-        _model_cache["model"] = YOLO(str(MODEL_PATH))
-    return _model_cache["model"]
-
-
-def detect_droplets(image: Image.Image, conf_threshold: float = 0.25):
-    model = get_model()
+def detect_droplets(image: Image.Image, conf_threshold: float):
+    model = load_model()
     results = model.predict(image, conf=conf_threshold, verbose=False)[0]
 
     annotated = Image.fromarray(results.plot()[:, :, ::-1])  # BGR -> RGB
@@ -57,47 +62,56 @@ def detect_droplets(image: Image.Image, conf_threshold: float = 0.25):
     df = pd.DataFrame(rows) if rows else pd.DataFrame(
         columns=["confidence", "width_px", "height_px", "aspect_ratio (b/a)", "contact_angle_proxy (deg)"]
     )
-
-    summary = (
-        f"**{len(rows)} droplet(s) detected**"
-        + (f" · mean contact-angle proxy: {df['contact_angle_proxy (deg)'].mean():.1f}°" if rows else "")
-    )
-
-    return annotated, df, summary
+    return annotated, df
 
 
-def build_interface():
-    example_images = sorted(TEST_IMAGES_DIR.glob("*.jpg"))[:6] if TEST_IMAGES_DIR.exists() else []
+st.title("💧 Droplet Detection & Hydrophobicity-Proxy Metrics")
+st.caption(
+    "Demo of a YOLOv8 model trained to detect droplets and derive a geometric "
+    "contact-angle-proxy metric from each detection's bounding box. "
+    "**All images here are synthetic** — see the README for details."
+)
 
-    with gr.Blocks(title="Droplet Detection — YOLOv8 Demo") as demo:
-        gr.Markdown(
-            "# 💧 Droplet Detection & Hydrophobicity-Proxy Metrics\n"
-            "Demo of a YOLOv8 model trained to detect droplets and derive a geometric "
-            "contact-angle-proxy metric from each detection's bounding box. "
-            "**All images here are synthetic** — see the README for details.\n"
-        )
+col1, col2 = st.columns([1, 1])
 
-        with gr.Row():
-            with gr.Column():
-                image_input = gr.Image(type="pil", label="Input image")
-                conf_slider = gr.Slider(0.05, 0.9, value=0.25, step=0.05, label="Confidence threshold")
-                run_btn = gr.Button("Detect droplets", variant="primary")
-                if example_images:
-                    gr.Examples(examples=[[str(p)] for p in example_images], inputs=image_input)
-            with gr.Column():
-                image_output = gr.Image(type="pil", label="Detections")
-                summary_output = gr.Markdown()
-                table_output = gr.Dataframe(label="Per-droplet geometry")
+with col1:
+    st.subheader("Input")
+    source = st.radio("Image source", ["Use a test example", "Upload my own"], horizontal=True)
 
-        run_btn.click(
-            fn=detect_droplets,
-            inputs=[image_input, conf_slider],
-            outputs=[image_output, table_output, summary_output],
-        )
+    image = None
+    if source == "Use a test example":
+        if TEST_IMAGES_DIR.exists():
+            example_files = sorted(TEST_IMAGES_DIR.glob("*.jpg"))
+            if example_files:
+                choice = st.selectbox("Choose an example", [p.name for p in example_files])
+                image = Image.open(TEST_IMAGES_DIR / choice)
+        else:
+            st.warning("No test images found in data/test/images/.")
+    else:
+        uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+        if uploaded is not None:
+            image = Image.open(uploaded)
 
-    return demo
+    conf_threshold = st.slider("Confidence threshold", 0.05, 0.9, 0.25, 0.05)
 
+    if image is not None:
+        st.image(image, caption="Input image", use_container_width=True)
 
-if __name__ == "__main__":
-    demo = build_interface()
-    demo.launch()
+with col2:
+    st.subheader("Detections")
+    if image is not None:
+        annotated, df = detect_droplets(image, conf_threshold)
+        st.image(annotated, caption="Detected droplets", use_container_width=True)
+
+        n = len(df)
+        if n > 0:
+            st.markdown(
+                f"**{n} droplet(s) detected** · mean contact-angle proxy: "
+                f"{df['contact_angle_proxy (deg)'].mean():.1f}°"
+            )
+        else:
+            st.markdown("**No droplets detected** at this confidence threshold.")
+
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.info("Select or upload an image to run detection.")
